@@ -89,14 +89,17 @@ func LockWithContext(ctx context.Context, s Locker, info *LockInfo) (string, err
 			return "", err
 		}
 
-		if le == nil || le.Info == nil || le.Info.ID == "" {
-			// If we don't have a complete LockError then there's something
-			// wrong with the lock.
+		if !le.Retriable() {
 			return "", err
 		}
 
 		if postLockHook != nil {
 			postLockHook()
+		}
+
+		// Lock() can be repeated without sleep
+		if le.RetriableWithoutDelay() {
+			continue
 		}
 
 		// there's an existing lock, wait and try again
@@ -140,6 +143,10 @@ type LockInfo struct {
 
 	// Path to the state file when applicable. Set by the Lock implementation.
 	Path string
+
+	// Set when writing of lock file fails because of conflict and
+	// then reading fails because file doesn't exist (removed by other process)
+	InconsistentRead bool `json:"-"`
 }
 
 // NewLockInfo creates a LockInfo object and populates many of its fields
@@ -226,4 +233,20 @@ func (e *LockError) Error() string {
 		out = append(out, e.Info.String())
 	}
 	return strings.Join(out, "\n")
+}
+
+// Retriable returns true when locking should be retried
+func (e *LockError) Retriable() bool {
+	// If we don't have a complete LockError then there's something
+	// wrong with the lock.
+	if e == nil || e.Info == nil {
+		return false
+	}
+
+	return e.Info.InconsistentRead || e.Info.ID != ""
+}
+
+// RetriableWithoutDelay returns true when delaying can be avoided
+func (e *LockError) RetriableWithoutDelay() bool {
+	return e.Retriable() && e.Info.ID == ""
 }

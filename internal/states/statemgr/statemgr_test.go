@@ -24,6 +24,10 @@ func TestNewLockInfo(t *testing.T) {
 		t.Fatal("LockInfo missing ID")
 	}
 
+	if info1.InconsistentRead {
+		t.Fatal("LockInfo.InconsistentRead should be false")
+	}
+
 	if info1.Version == "" {
 		t.Fatal("LockInfo missing version")
 	}
